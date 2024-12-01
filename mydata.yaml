@@ -1,0 +1,11 @@
+path: ../data3
+train: images/train2017
+val: images/train2017
+test:
+
+
+names:
+  0: vongtron
+
+
+
