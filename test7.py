@@ -265,6 +265,18 @@ def process_camera():
 
 
 
+# Thêm thư viện cần thiết
+from tkinter import ttk
+
+# Hàm xử lý lựa chọn từ combobox
+def handle_combobox_selection(event):
+    selected_option = combobox.get()
+    if selected_option == "Chọn ảnh":
+        select_image()
+    elif selected_option == "Nhận diện video":
+        process_video()
+    elif selected_option == "Nhận diện camera":
+        process_camera()
 
 # Giao diện chính
 ctk.set_appearance_mode("Dark")
@@ -278,17 +290,12 @@ app.geometry("500x600")
 title_label = ctk.CTkLabel(app, text="Phát hiện biển báo giao thông", font=("Arial", 24, "bold"))
 title_label.pack(pady=20)
 
-# Nút chọn ảnh
-select_button = ctk.CTkButton(app, text="Chọn ảnh", command=select_image, font=("Arial", 16))
-select_button.pack(pady=10)
-
-# Nút chọn video
-video_button = ctk.CTkButton(app, text="Nhận diện video", command=process_video, font=("Arial", 16))
-video_button.pack(pady=10)
-
-# Nút nhận diện bằng camera
-camera_button = ctk.CTkButton(app, text="Nhận diện camera", command=process_camera, font=("Arial", 16))
-camera_button.pack(pady=10)
+# Combobox chọn loại nhận diện
+options = ["Chọn ảnh", "Nhận diện video", "Nhận diện camera"]
+combobox = ttk.Combobox(app, values=options, state="readonly", font=("Arial", 14))
+combobox.pack(pady=20)
+combobox.bind("<<ComboboxSelected>>", handle_combobox_selection)
+combobox.set("Chọn tùy chọn")  # Thiết lập giá trị mặc định
 
 # Nút thoát
 exit_button = ctk.CTkButton(app, text="Thoát", command=app.destroy, font=("Arial", 16), fg_color="red")
@@ -296,3 +303,5 @@ exit_button.pack(pady=20)
 
 # Chạy ứng dụng
 app.mainloop()
+
+
