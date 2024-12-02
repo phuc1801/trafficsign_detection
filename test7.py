@@ -4,6 +4,7 @@ from tkinter import filedialog
 from PIL import Image, ImageDraw, ImageFont, ImageTk
 from ultralytics import YOLO
 import cv2
+import threading
 
 # Tải mô hình YOLO
 model = YOLO("best1.pt")  # Thay bằng đường dẫn tới file best.pt
@@ -71,79 +72,71 @@ label_mapping = {
 
 # Đường dẫn font hỗ trợ tiếng Việt
 FONT_PATH = "arial.ttf"  # Thay bằng đường dẫn font
+# Hàm xử lý video
 
-# Hàm nhận diện video
-def process_video():
-    video_path = filedialog.askopenfilename(filetypes=[("Video Files", "*.mp4;*.avi;*.mov")])
-    if not video_path:
-        return
-
-    cap = cv2.VideoCapture(video_path)
+# Hàm xử lý video
+def process_video(video_path, video_label, result_window):
+    cap = cv2.VideoCapture(video_path)  # Đọc video
     if not cap.isOpened():
-        print("Không thể mở video")
+        print("Không thể mở video.")
         return
 
-    # Tạo cửa sổ hiển thị kết quả
-    result_window = ctk.CTkToplevel()
-    result_window.title("Kết quả nhận diện video")
-    result_window.geometry("800x600")
-
-    video_label = ctk.CTkLabel(result_window, text="")
-    video_label.pack(padx=10, pady=10)
-
-    def process_frame():
+    while True:
         ret, frame = cap.read()
         if not ret:
-            cap.release()
-            return
+            break
 
-        # Xử lý từng khung hình
+        # Dự đoán từ mô hình YOLO
         results = model.predict(source=frame, conf=0.5)
 
-        # Chuyển đổi từ BGR -> RGB chỉ khi cần thiết
-        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        frame_pil = Image.fromarray(frame_rgb)
-        draw = ImageDraw.Draw(frame_pil)
+        # Chuyển đổi khung hình OpenCV thành ảnh PIL
+        img = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+        draw = ImageDraw.Draw(img)
 
-        # Tải font hỗ trợ tiếng Việt
         try:
-            font = ImageFont.truetype(FONT_PATH, size=20)
+            font = ImageFont.truetype("arialbd.ttf", size=20)
         except:
             font = ImageFont.load_default()
 
-        # Vẽ bounding box và nhãn lên khung hình
+        # Vẽ các kết quả nhận diện lên ảnh
         for box in results[0].boxes:
             cls_index = int(box.cls)
             cls_id = model.names[cls_index]
             label = label_mapping.get(cls_id, "Không xác định")
             confidence = box.conf[0]
+            confidence_text = f"{confidence:.2f}"
             x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
-
-            # Vẽ bounding box
             draw.rectangle([x1, y1, x2, y2], outline="green", width=3)
-
-            # Vẽ nhãn và độ chính xác
-            text = f"{label} ({confidence:.2f})"
+            text = f"{label} ({confidence_text})"
             draw.text((x1, y1 - 20), text, fill="green", font=font)
 
-        # Chuyển đổi lại từ RGB -> BGR trước khi sử dụng OpenCV
-        frame_bgr = cv2.cvtColor(np.array(frame_pil), cv2.COLOR_RGB2BGR)
+        # Chuyển ảnh PIL sang ImageTk
+        img_tk = ImageTk.PhotoImage(img)
 
-        # Chuyển frame BGR về ImageTk để hiển thị trong Tkinter
-        frame_tk = ImageTk.PhotoImage(Image.fromarray(frame_bgr))
-        video_label.configure(image=frame_tk)
-        video_label.image = frame_tk
+        # Kiểm tra xem cửa sổ kết quả vẫn còn mở không
+        if result_window.winfo_exists():
+            # Cập nhật video_label với ảnh mới
+            video_label.configure(image=img_tk)
+            video_label.image = img_tk  # Giữ tham chiếu đến ảnh
+            result_window.after(10, result_window.update)  # Cập nhật cửa sổ giao diện
 
-        # Lặp lại
-        result_window.after(10, process_frame)
+    cap.release()
 
-    # Bắt đầu xử lý video
-    process_frame()
+# Hàm chọn video
+def select_video():
+    video_path = filedialog.askopenfilename(filetypes=[("Video Files", "*.mp4;*.avi;*.mov")])
+    if video_path:
+        result_window = ctk.CTkToplevel()
+        result_window.title("Kết quả nhận diện từ video")
+        result_window.geometry("800x600")
 
-    # Nút đóng cửa sổ
-    close_button = ctk.CTkButton(result_window, text="Đóng", command=result_window.destroy)
-    close_button.pack(pady=20)
+        # Sử dụng Label của tkinter thay vì CTkLabel để tránh vấn đề chữ mặc định
+        video_label = ctk.CTkLabel(result_window)
+        video_label.configure(text="")  # Đảm bảo không có chữ mặc định
+        video_label.pack(padx=10, pady=10)
 
+        # Chạy video trong một luồng con
+        threading.Thread(target=process_video, args=(video_path, video_label, result_window), daemon=True).start()
 
 # Hàm chọn và xử lý ảnh
 def select_image():
@@ -192,77 +185,66 @@ def show_result_with_labels(image_path, results):
     close_button = ctk.CTkButton(result_window, text="Đóng", command=result_window.destroy)
     close_button.pack(pady=20)
 
-# Hàm nhận diện bằng camera
+# Hàm xử lý video từ camera
 def process_camera():
-    cap = cv2.VideoCapture(0)  # Sử dụng camera mặc định (0)
+    cap = cv2.VideoCapture(0)  # Mở camera (0 là camera mặc định)
     if not cap.isOpened():
-        print("Không thể mở camera")
+        print("Không thể mở camera.")
         return
 
-    # Tạo cửa sổ hiển thị kết quả
+    # Tạo cửa sổ kết quả
     result_window = ctk.CTkToplevel()
-    result_window.title("Nhận diện từ camera")
+    result_window.title("Kết quả nhận diện từ camera")
     result_window.geometry("800x600")
 
-    video_label = ctk.CTkLabel(result_window, text="")
+    # Label để hiển thị video
+    video_label = ctk.CTkLabel(result_window)
     video_label.pack(padx=10, pady=10)
 
-    # Hàm xử lý camera
-    def process_frame():
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                break
+    def update_frame():
+        ret, frame = cap.read()
+        if not ret:
+            cap.release()
+            cv2.destroyAllWindows()
+            return
 
-            # Giảm độ phân giải khung hình
-            frame = cv2.resize(frame, (640, 480))
+        # Dự đoán từ mô hình YOLO
+        results = model.predict(source=frame, conf=0.5)
 
-            # Nhận diện
-            results = model.predict(source=frame, conf=0.5)
+        # Chuyển đổi khung hình OpenCV thành ảnh PIL
+        img = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+        draw = ImageDraw.Draw(img)
 
-            # Chuyển đổi BGR -> RGB
-            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            frame_pil = Image.fromarray(frame_rgb)
-            draw = ImageDraw.Draw(frame_pil)
+        try:
+            font = ImageFont.truetype(FONT_PATH, size=20)
+        except:
+            font = ImageFont.load_default()
 
-            try:
-                font = ImageFont.truetype(FONT_PATH, size=20)
-            except:
-                font = ImageFont.load_default()
+        # Vẽ các kết quả nhận diện lên ảnh
+        for box in results[0].boxes:
+            cls_index = int(box.cls)
+            cls_id = model.names[cls_index]
+            label = label_mapping.get(cls_id, "Không xác định")
+            confidence = box.conf[0]
+            confidence_text = f"{confidence:.2f}"
+            x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
+            draw.rectangle([x1, y1, x2, y2], outline="green", width=3)
+            text = f"{label} ({confidence_text})"
+            draw.text((x1, y1 - 20), text, fill="green", font=font)
 
-            # Vẽ kết quả nhận diện
-            for box in results[0].boxes:
-                cls_index = int(box.cls)
-                cls_id = model.names[cls_index]
-                label = label_mapping.get(cls_id, "Không xác định")
-                confidence = box.conf[0]
-                x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
+        # Chuyển ảnh PIL sang ImageTk
+        img_tk = ImageTk.PhotoImage(img)
 
-                draw.rectangle([x1, y1, x2, y2], outline="green", width=3)
-                text = f"{label} ({confidence:.2f})"
-                draw.text((x1, y1 - 20), text, fill="green", font=font)
+        # Kiểm tra xem cửa sổ kết quả vẫn còn mở không
+        if result_window.winfo_exists():
+            # Cập nhật video_label với ảnh mới
+            video_label.configure(image=img_tk)
+            video_label.image = img_tk  # Giữ tham chiếu đến ảnh
 
-            # Chuyển đổi trở lại BGR
-            frame_bgr = cv2.cvtColor(np.array(frame_pil), cv2.COLOR_RGB2BGR)
+            # Tiếp tục cập nhật frame sau 10ms
+            result_window.after(10, update_frame)
 
-            # Hiển thị khung hình
-            frame_tk = ImageTk.PhotoImage(Image.fromarray(frame_bgr))
-            video_label.configure(image=frame_tk)
-            video_label.image = frame_tk
-
-            result_window.update()
-
-        cap.release()
-        cv2.destroyAllWindows()
-
-    # Chạy xử lý camera trong luồng riêng
-    camera_thread = threading.Thread(target=process_frame)
-    camera_thread.start()
-
-    # Nút đóng cửa sổ
-    close_button = ctk.CTkButton(result_window, text="Đóng", command=result_window.destroy)
-    close_button.pack(pady=20)
-
+    update_frame()  # Bắt đầu cập nhật video
 
 
 # Thêm thư viện cần thiết
@@ -274,7 +256,7 @@ def handle_combobox_selection(event):
     if selected_option == "Chọn ảnh":
         select_image()
     elif selected_option == "Nhận diện video":
-        process_video()
+        select_video()
     elif selected_option == "Nhận diện camera":
         process_camera()
 
